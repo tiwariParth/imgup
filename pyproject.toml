@@ -1,0 +1,39 @@
+[project]
+name = "imgup"
+version = "0.1.0"
+description = "Local image upscaler CLI using pretrained spandrel-supported models"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "tiwariParth" }]
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "torch>=2.14",
+    "torchvision>=0.29",
+    "spandrel>=0.4",
+    "pillow>=11",
+    "typer>=0.15",
+    "tqdm>=4.66",
+]
+
+[project.scripts]
+imgup = "imgup.cli:app"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu130" }
+torchvision = { index = "pytorch-cu130" }
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
