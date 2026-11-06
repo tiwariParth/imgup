@@ -47,7 +47,7 @@ Then close and reopen your terminal.
 
 **2. Download this project:**
 ```sh
-git clone https://github.com/<your-username>/imgup.git
+git clone https://github.com/tiwariParth/imgup.git
 cd imgup
 ```
 (No git? Click the green **Code** button on GitHub → **Download ZIP**, unzip it, and open a
@@ -202,7 +202,7 @@ You're welcome to fix bugs, add features or adapt it for yourself. Here's everyt
 ### Get a development copy
 
 ```sh
-git clone https://github.com/<your-username>/imgup.git
+git clone https://github.com/tiwariParth/imgup.git
 cd imgup
 uv sync                                    # installs the app plus pytest
 uv run python scripts/download_models.py   # needed for one of the tests
