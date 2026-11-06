@@ -190,6 +190,12 @@ Apple GPU (MPS) support would be welcome.
 **Does it work with AMD or Intel GPUs?**
 Not tested. It will fall back to CPU.
 
+**Can I install it with `pip install` or `uv tool install` instead of cloning?**
+Not yet. The tool looks for models in the `models/` folder of the cloned project, so after a
+package install `--model x4plus` says "not found", and the download script isn't included.
+Use the clone + `uv run` steps above. If you do install it as a package, pass the model file
+directly: `imgup photo.jpg --model /path/to/RealESRGAN_x4plus.pth`.
+
 **Is anything sent to the internet?**
 No. Only the setup steps download things. Upscaling happens entirely on your computer.
 

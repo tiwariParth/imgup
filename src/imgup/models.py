@@ -11,7 +11,6 @@ MODELS_DIR = Path(__file__).resolve().parents[2] / "models"
 ALIASES = {
     "x4plus": "RealESRGAN_x4plus.pth",
     "anime": "RealESRGAN_x4plus_anime_6B.pth",
-    "x4plus_anime_6B": "RealESRGAN_x4plus_anime_6B.pth",
 }
 
 
@@ -35,8 +34,8 @@ def resolve_model_path(name_or_path: str) -> Path:
     )
 
 
-def pick_device(force_cpu: bool = False) -> torch.device:
-    return torch.device("cuda" if torch.cuda.is_available() and not force_cpu else "cpu")
+def pick_device() -> torch.device:
+    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def load_model(path: Path, device: torch.device, half: bool = True) -> ImageModelDescriptor:

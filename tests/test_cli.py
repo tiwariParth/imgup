@@ -7,10 +7,15 @@ from imgup.cli import app
 from spandrel.architectures.Compact import Compact as SRVGGNetCompact
 
 
-def test_cli_batch_skip_and_scale(tmp_path):
+def tiny_weights(tmp_path):
     torch.manual_seed(0)
     weights = tmp_path / "tiny.pth"
     torch.save(SRVGGNetCompact(num_feat=8, num_conv=4, upscale=2).state_dict(), weights)
+    return weights
+
+
+def test_cli_batch_skip_and_scale(tmp_path):
+    weights = tiny_weights(tmp_path)
     src = tmp_path / "in"
     (src / "sub").mkdir(parents=True)
     Image.fromarray(np.zeros((10, 12, 3), np.uint8)).save(src / "a.jpg")
@@ -34,9 +39,7 @@ def test_cli_batch_skip_and_scale(tmp_path):
 
 
 def test_cli_default_writes_next_to_input(tmp_path):
-    torch.manual_seed(0)
-    weights = tmp_path / "tiny.pth"
-    torch.save(SRVGGNetCompact(num_feat=8, num_conv=4, upscale=2).state_dict(), weights)
+    weights = tiny_weights(tmp_path)
     src = tmp_path / "in"
     src.mkdir()
     Image.fromarray(np.zeros((10, 12, 3), np.uint8)).save(src / "a.jpg")
@@ -49,6 +52,31 @@ def test_cli_default_writes_next_to_input(tmp_path):
     for _ in range(2):
         assert CliRunner().invoke(app, [str(src), "--model", str(weights)]).exit_code == 0
     assert sorted(p.name for p in src.iterdir()) == ["a.jpg", "a_x1.5.jpg", "a_x2.jpg"]
+
+
+def test_cli_output_folder_above_input(tmp_path):
+    trip = tmp_path / "Pictures" / "trip"
+    trip.mkdir(parents=True)
+    Image.new("RGB", (4, 4)).save(trip / "a.png")
+    r = CliRunner().invoke(app, [str(trip), "-o", str(tmp_path / "Pictures"), "--model", str(tiny_weights(tmp_path))])
+    assert r.exit_code == 0, r.output
+    assert Image.open(tmp_path / "Pictures" / "a.png").size == (8, 8)
+
+
+def test_cli_refuses_two_inputs_with_one_output(tmp_path):
+    Image.new("RGB", (4, 4), "red").save(tmp_path / "pic.png")
+    Image.new("RGB", (4, 4), "blue").save(tmp_path / "pic.jpg")
+    r = CliRunner().invoke(app, [str(tmp_path), "-f", "webp", "--overwrite", "--model", str(tiny_weights(tmp_path))])
+    assert r.exit_code == 1 and "would both be saved as" in r.output
+    assert sorted(p.name for p in tmp_path.glob("pic*")) == ["pic.jpg", "pic.png", "pic_x2.webp"]
+
+
+def test_cli_never_overwrites_the_input(tmp_path):
+    Image.new("RGB", (4, 4), "red").save(tmp_path / "a.png")
+    before = (tmp_path / "a.png").read_bytes()
+    r = CliRunner().invoke(app, [str(tmp_path / "a.png"), "-o", str(tmp_path), "--overwrite", "--model", str(tiny_weights(tmp_path))])
+    assert "would overwrite the input" in r.output
+    assert (tmp_path / "a.png").read_bytes() == before
 
 
 def test_cli_missing_model(tmp_path):

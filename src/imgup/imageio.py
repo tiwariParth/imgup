@@ -62,9 +62,7 @@ def load(path: Path) -> LoadedImage:
     return LoadedImage(np.array(im.convert("RGB")), alpha, fmt, icc, exif)
 
 
-def target_size(w: int, h: int, scale: float, native: int) -> tuple[int, int]:
-    if not 0 < scale <= native:
-        raise ValueError(f"--scale must be in (0, {native}] for this model, got {scale}")
+def target_size(w: int, h: int, scale: float) -> tuple[int, int]:
     return max(1, round(w * scale)), max(1, round(h * scale))
 
 

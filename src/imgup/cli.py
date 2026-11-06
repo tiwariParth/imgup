@@ -1,6 +1,7 @@
 """imgup command-line interface."""
 
 import re
+import sys
 from enum import Enum
 from pathlib import Path
 
@@ -29,7 +30,9 @@ def collect(src: Path, out_dir: Path | None, recursive: bool) -> list[Path]:
     # folder, or name_x<scale>.* sitting next to its original name.*.
     if out_dir:
         out = out_dir.resolve()
-        return sorted(p for p in files if out not in p.resolve().parents)
+        if src.resolve() in out.parents:  # only an output folder inside the input folder can hold old results
+            files = [p for p in files if out not in p.resolve().parents]
+        return sorted(files)
     stems = {(p.parent, p.stem) for p in files}
     return sorted(p for p in files if not ((m := re.fullmatch(r"(.+)_x[\d.]+", p.stem)) and (p.parent, m[1]) in stems))
 
@@ -47,7 +50,7 @@ def process(path: Path, dest: Path, model: ImageModelDescriptor, scale: float | 
     img = imageio.load(path)
     h, w = img.rgb.shape[:2]
     s = model.scale
-    size = imageio.target_size(w, h, scale or s, s)
+    size = imageio.target_size(w, h, scale or s)
     if w * h * s * s > max_pixels:
         raise tiling.UpscaleError(
             f"{w}x{h} at native x{s} is {w * s}x{h * s} ({w * h * s * s / 1e6:.0f} MP), "
@@ -61,8 +64,14 @@ def process(path: Path, dest: Path, model: ImageModelDescriptor, scale: float | 
     return size
 
 
+def report(msg: str) -> None:
+    """Print a per-file error without breaking the batch progress bar."""
+    with tqdm.external_write_mode(file=sys.stderr):
+        typer.secho(f"error: {msg}", fg="red", err=True)
+
+
 def fail(msg: str) -> None:
-    typer.secho(f"error: {msg}", fg="red", err=True)
+    report(msg)
     raise typer.Exit(1)
 
 
@@ -102,9 +111,14 @@ def main(
     jobs = [(p, dest_for(p, input, output, fmt, scale or desc.scale)) for p in files]
     single = len(jobs) == 1
     failures = 0
+    claimed: dict[Path, Path] = {}
     for path, dest in tqdm(jobs, disable=single, unit="img"):
         if dest.resolve() == path.resolve():
             tqdm.write(f"skip {path}: output would overwrite the input")
+            continue
+        if (other := claimed.setdefault(dest.resolve(), path)) != path:
+            failures += 1
+            report(f"{path} and {other} would both be saved as {dest}; rename one of them")
             continue
         if dest.exists() and not overwrite:
             tqdm.write(f"skip {path}: {dest} exists (use --overwrite)")
@@ -114,6 +128,6 @@ def main(
             tqdm.write(f"{path} -> {dest} ({w}x{h})")
         except (imageio.ImageError, tiling.UpscaleError, OSError) as e:
             failures += 1
-            typer.secho(f"error: {path}: {e}", fg="red", err=True)
+            report(f"{path}: {e}")
     if failures:
         raise typer.Exit(1)

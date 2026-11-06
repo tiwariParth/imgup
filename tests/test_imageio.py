@@ -6,13 +6,10 @@ from imgup import imageio
 
 
 def test_target_size_math():
-    assert imageio.target_size(100, 50, 4, 4) == (400, 200)
-    assert imageio.target_size(100, 50, 2, 4) == (200, 100)
-    assert imageio.target_size(33, 10, 1.5, 4) == (50, 15)
-    assert imageio.target_size(1, 1, 0.1, 4) == (1, 1)
-    for bad in (0, -1, 4.01):
-        with pytest.raises(ValueError):
-            imageio.target_size(10, 10, bad, 4)
+    assert imageio.target_size(100, 50, 4) == (400, 200)
+    assert imageio.target_size(100, 50, 2) == (200, 100)
+    assert imageio.target_size(33, 10, 1.5) == (50, 15)
+    assert imageio.target_size(1, 1, 0.1) == (1, 1)
 
 
 def test_alpha_roundtrip(tmp_path):
