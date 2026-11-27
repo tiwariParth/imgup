@@ -120,6 +120,17 @@ at [OpenModelDB](https://openmodeldb.info/).
 
 ### All options
 
+To preview a recursive run without using the model or creating the output folder:
+
+```sh
+uv run imgup path/to/folder -r -o upscaled/ --dry-run
+```
+
+The preview reads image headers and shows destinations, dimensions, and output
+conflicts. It uses 4× for the built-in model aliases by default. For a custom
+model file, pass the intended `--scale` explicitly. The preview does not validate
+custom weights or predict whether inference will fit in memory.
+
 Run `uv run imgup --help` to see these in the terminal.
 
 | Option | Default | What it does |
@@ -131,6 +142,7 @@ Run `uv run imgup --help` to see these in the terminal.
 | `-q, --quality` | `95` | JPEG/WebP quality, 1-100. Higher means better quality and larger files. |
 | `-r, --recursive` | off | Also process images in subfolders. |
 | `--overwrite` | off | Redo images that already have a result. |
+| `--dry-run` | off | Preview output paths, dimensions and skips without loading weights or writing output. |
 | `-t, --tile` | `256` | Size of the pieces the image is processed in. Lower it if you run out of GPU memory. |
 | `--pad` | `16` | Overlap between pieces, so no lines show where they join. |
 | `--max-pixels` | `256000000` | Safety limit: refuses results bigger than this many pixels (to protect your RAM). |

@@ -1,5 +1,6 @@
 """imgup command-line interface."""
 
+import math
 import re
 import sys
 from enum import Enum
@@ -45,6 +46,58 @@ def dest_for(path: Path, src: Path, out_dir: Path | None, fmt: Fmt | None, scale
     return out_dir / rel.with_suffix(suffix)
 
 
+class Skip(Enum):
+    input = "output would overwrite the input"
+    duplicate = "same output as"
+    exists = "output exists"
+
+
+def skipped(path: Path, dest: Path, overwrite: bool, claimed: dict[Path, Path]) -> tuple[Skip, Path] | None:
+    """Use the same collision policy in the preview and the real run."""
+    resolved = dest.resolve()
+    if resolved == path.resolve():
+        return Skip.input, path
+    if (other := claimed.setdefault(resolved, path)) != path:
+        return Skip.duplicate, other
+    if dest.exists() and not overwrite:
+        return Skip.exists, dest
+    return None
+
+
+def preview(files: list[Path], src: Path, out_dir: Path | None, fmt: Fmt | None,
+            model: str, scale: float | None, overwrite: bool) -> None:
+    native = {"x4plus": 4, "anime": 4}.get(model)
+    if scale is None:
+        if native is None:
+            fail("--dry-run requires --scale for a custom model; weights are not loaded")
+        scale = native
+    if not math.isfinite(scale) or scale <= 0 or (native is not None and scale > native):
+        fail(f"--scale must be positive and finite{f' and at most {native}' if native is not None else ''}")
+
+    claimed: dict[Path, Path] = {}
+    failures = False
+    for path in files:
+        dest = dest_for(path, src, out_dir, fmt, scale)
+        result = skipped(path, dest, overwrite, claimed)
+        action = "would write"
+        if result is not None:
+            reason, other = result
+            action = f"skip: {reason.value}" + (f" {other}" if reason is Skip.duplicate else "")
+        try:
+            w, h = imageio.target_size(*imageio.header_size(path), scale)
+        except OverflowError:
+            report(f"{path} -> {dest}: --scale is too large for the header dimensions")
+            failures = True
+            continue
+        except imageio.ImageError as e:
+            report(f"{path} -> {dest}: {e}")
+            failures = True
+            continue
+        typer.echo(f"{path} -> {dest} ({w}x{h}): {action}")
+    if failures:
+        raise typer.Exit(1)
+
+
 def process(path: Path, dest: Path, model: ImageModelDescriptor, scale: float | None, tile: int, pad: int,
             fmt: Fmt | None, quality: int, max_pixels: int, progress: bool) -> tuple[int, int]:
     img = imageio.load(path)
@@ -87,6 +140,7 @@ def main(
     quality: int = typer.Option(95, "-q", "--quality", min=1, max=100, help="JPEG/WebP quality."),
     recursive: bool = typer.Option(False, "-r", "--recursive", help="Recurse into subfolders."),
     overwrite: bool = typer.Option(False, "--overwrite", help="Re-process files whose output already exists."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview output paths, dimensions and skips without loading weights."),
     max_pixels: int = typer.Option(256_000_000, "--max-pixels", help="Refuse images whose native-scale output exceeds this many pixels."),
     fp32: bool = typer.Option(False, "--fp32", help="Disable fp16 inference."),
 ) -> None:
@@ -96,6 +150,10 @@ def main(
     files = collect(input, output, recursive)
     if not files:
         fail(f"no images found in {input}" + ("" if recursive else " (use -r for subfolders)"))
+
+    if dry_run:
+        preview(files, input, output, fmt, model, scale, overwrite)
+        return
 
     try:
         weights = models.resolve_model_path(model)
@@ -113,15 +171,15 @@ def main(
     failures = 0
     claimed: dict[Path, Path] = {}
     for path, dest in tqdm(jobs, disable=single, unit="img"):
-        if dest.resolve() == path.resolve():
-            tqdm.write(f"skip {path}: output would overwrite the input")
-            continue
-        if (other := claimed.setdefault(dest.resolve(), path)) != path:
-            failures += 1
-            report(f"{path} and {other} would both be saved as {dest}; rename one of them")
-            continue
-        if dest.exists() and not overwrite:
-            tqdm.write(f"skip {path}: {dest} exists (use --overwrite)")
+        if (result := skipped(path, dest, overwrite, claimed)) is not None:
+            reason, other = result
+            if reason is Skip.input:
+                tqdm.write(f"skip {path}: {reason.value}")
+            elif reason is Skip.duplicate:
+                failures += 1
+                report(f"{path} and {other} would both be saved as {dest}; rename one of them")
+            else:
+                tqdm.write(f"skip {path}: {dest} exists (use --overwrite)")
             continue
         try:
             w, h = process(path, dest, desc, scale, tile, pad, fmt, quality, max_pixels, progress=single)

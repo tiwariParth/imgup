@@ -83,3 +83,80 @@ def test_cli_missing_model(tmp_path):
     Image.new("RGB", (4, 4)).save(tmp_path / "a.png")
     r = CliRunner().invoke(app, [str(tmp_path / "a.png"), "--model", "nope"])
     assert r.exit_code == 1 and "Model 'nope' not found" in r.output and "Traceback" not in r.output
+
+
+def test_dry_run_lists_recursive_actions_without_loading_or_writing(tmp_path, monkeypatch):
+    from imgup import models
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("dry run must not resolve model weights or select a device")
+
+    monkeypatch.setattr(models, "resolve_model_path", forbidden)
+    monkeypatch.setattr(models, "pick_device", forbidden)
+    monkeypatch.setattr(models, "load_model", forbidden)
+    src = tmp_path / "in"
+    (src / "sub").mkdir(parents=True)
+    Image.new("RGB", (6, 4)).save(src / "a.jpg")
+    Image.new("RGB", (3, 2)).save(src / "sub" / "b.png")
+    out = tmp_path / "out"
+    before = {path: path.read_bytes() for path in src.rglob("*") if path.is_file()}
+
+    result = CliRunner().invoke(app, [str(src), "-r", "-o", str(out), "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert f"{src / 'a.jpg'} -> {out / 'a.jpg'} (24x16): would write" in result.output
+    assert f"{src / 'sub/b.png'} -> {out / 'sub/b.png'} (12x8): would write" in result.output
+    assert not out.exists()
+    assert {path: path.read_bytes() for path in src.rglob("*") if path.is_file()} == before
+
+
+def test_dry_run_reports_existing_output_collision_and_same_input(tmp_path):
+    src = tmp_path / "in"
+    src.mkdir()
+    out = tmp_path / "out"
+    out.mkdir()
+    for name in ("a.jpg", "a.png"):
+        Image.new("RGB", (6, 4)).save(src / name)
+    Image.new("RGB", (1, 1)).save(out / "a.webp")
+    before = (out / "a.webp").read_bytes()
+    runner = CliRunner()
+    result = runner.invoke(app, [str(src), "-o", str(out), "-f", "webp", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "skip: output exists" in result.output
+    assert "skip: same output as" in result.output
+    assert (out / "a.webp").read_bytes() == before
+
+    image = src / "a.png"
+    result = runner.invoke(app, [str(image), "-o", str(src), "--overwrite", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "skip: output would overwrite the input" in result.output
+    assert Image.open(image).size == (6, 4)
+
+
+def test_dry_run_custom_weights_need_explicit_scale_and_honor_exif(tmp_path):
+    path = tmp_path / "rotated.jpg"
+    exif = Image.Exif()
+    exif[274] = 6
+    Image.new("RGB", (6, 4)).save(path, exif=exif)
+    runner = CliRunner()
+    args = [str(path), "--model", "uninstalled-custom.pth", "--dry-run"]
+    result = runner.invoke(app, args)
+    assert result.exit_code != 0 and "--scale" in result.output
+    result = runner.invoke(app, [*args, "--scale", "2"])
+    assert result.exit_code == 0, result.output
+    assert "(8x12): would write" in result.output
+    assert list(tmp_path.iterdir()) == [path]
+
+
+def test_dry_run_reads_png_header_without_decoding(tmp_path, monkeypatch):
+    from PIL import PngImagePlugin
+
+    path = tmp_path / "frame.png"
+    Image.new("RGB", (6, 4)).save(path)
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("dry run must not decode pixels")
+
+    monkeypatch.setattr(PngImagePlugin.PngImageFile, "load", forbidden)
+    result = CliRunner().invoke(app, [str(path), "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "(24x16): would write" in result.output

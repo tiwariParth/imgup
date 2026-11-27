@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageCms, ImageOps, UnidentifiedImageError
+from PIL import ExifTags, Image, ImageCms, ImageOps, UnidentifiedImageError
 from tqdm import tqdm
 
 FORMATS = {"png": "PNG", "jpg": "JPEG", "webp": "WEBP"}
@@ -60,6 +60,20 @@ def load(path: Path) -> LoadedImage:
     im, icc = _normalize(im)
     alpha = im.getchannel("A") if im.mode == "RGBA" else None
     return LoadedImage(np.array(im.convert("RGB")), alpha, fmt, icc, exif)
+
+
+def header_size(path: Path) -> tuple[int, int]:
+    """Read dimensions and header orientation without decoding pixels."""
+    try:
+        with Image.open(path) as im:
+            w, h = im.size
+            # Some format overrides decode pixels to find later EXIF chunks.
+            # The base method reads orientation metadata already in the header.
+            if Image.Image.getexif(im).get(ExifTags.Base.Orientation) in (5, 6, 7, 8):
+                return h, w
+            return w, h
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as e:
+        raise ImageError(f"cannot read image header ({e})") from None
 
 
 def target_size(w: int, h: int, scale: float) -> tuple[int, int]:
